@@ -1,0 +1,24 @@
+{
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:Refiner}",
+      "name": "Debug Refiner",
+      "target": "Refiner",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug Refiner"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:Refiner}",
+      "name": "Release Refiner",
+      "target": "Refiner",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release Refiner"
+    }
+  ]
+}
