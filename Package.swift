@@ -10,7 +10,10 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "Refiner"
+            name: "Refiner",
+            resources: [
+                .process("Resources/BuildInfo.plist"),
+            ]
         ),
         .testTarget(
             name: "RefinerTests",

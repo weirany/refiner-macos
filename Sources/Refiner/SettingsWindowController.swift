@@ -16,13 +16,14 @@ final class SettingsWindowController {
                 settingsStore: settingsStore,
                 availabilityMonitor: availabilityMonitor
             )
-            .frame(minWidth: 540, minHeight: 440)
+            .frame(minWidth: 580, minHeight: 560)
 
             let hostingController = NSHostingController(rootView: contentView)
             let window = NSWindow(contentViewController: hostingController)
             window.title = "Settings"
-            window.setContentSize(NSSize(width: 560, height: 460))
+            window.setContentSize(NSSize(width: 620, height: 680))
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
             window.center()
             window.isReleasedWhenClosed = false
             window.setFrameAutosaveName("RefinerSettingsWindow")
@@ -35,7 +36,9 @@ final class SettingsWindowController {
         }
 
         availabilityMonitor.refresh()
+        window?.center()
         window?.makeKeyAndOrderFront(nil)
+        window?.orderFrontRegardless()
         NSApp.activate(ignoringOtherApps: true)
     }
 }

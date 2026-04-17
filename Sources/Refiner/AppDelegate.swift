@@ -3,6 +3,7 @@ import AppKit
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
+    private let appVersion = AppVersion()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.accessory)
@@ -44,6 +45,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             keyEquivalent: ","
         )
         menu.addItem(.separator())
+        let versionItem = NSMenuItem(
+            title: appVersion.menuTitle,
+            action: nil,
+            keyEquivalent: ""
+        )
+        versionItem.isEnabled = false
+        menu.addItem(versionItem)
         menu.addItem(
             withTitle: "Quit",
             action: #selector(quit),
@@ -77,10 +85,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc
     private func openSettings() {
-        SettingsWindowController.shared.show(
-            settingsStore: AppModel.shared.settingsStore,
-            availabilityMonitor: AppModel.shared.availabilityMonitor
-        )
+        DispatchQueue.main.async {
+            SettingsWindowController.shared.show(
+                settingsStore: AppModel.shared.settingsStore,
+                availabilityMonitor: AppModel.shared.availabilityMonitor
+            )
+        }
     }
 
     @objc
