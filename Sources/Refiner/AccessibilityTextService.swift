@@ -2,17 +2,100 @@ import AppKit
 import ApplicationServices
 import Foundation
 
+protocol AccessibilityElementHandling: Sendable {
+    func copyAttributeValue(
+        element: AXUIElement,
+        attribute: CFString
+    ) -> (AXError, CFTypeRef?)
+    func setAttributeValue(
+        element: AXUIElement,
+        attribute: CFString,
+        value: CFTypeRef
+    ) -> AXError
+    func isAttributeSettable(
+        element: AXUIElement,
+        attribute: CFString
+    ) -> (AXError, DarwinBoolean)
+}
+
+private struct LiveAccessibilityElementHandler: AccessibilityElementHandling {
+    func copyAttributeValue(
+        element: AXUIElement,
+        attribute: CFString
+    ) -> (AXError, CFTypeRef?) {
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(element, attribute, &value)
+        return (result, value)
+    }
+
+    func setAttributeValue(
+        element: AXUIElement,
+        attribute: CFString,
+        value: CFTypeRef
+    ) -> AXError {
+        AXUIElementSetAttributeValue(element, attribute, value)
+    }
+
+    func isAttributeSettable(
+        element: AXUIElement,
+        attribute: CFString
+    ) -> (AXError, DarwinBoolean) {
+        var settable = DarwinBoolean(false)
+        let result = AXUIElementIsAttributeSettable(element, attribute, &settable)
+        return (result, settable)
+    }
+}
+
+protocol TextInsertionHandling: Sendable {
+    func insertText(_ text: String) -> Bool
+}
+
+private struct LiveTextInsertionHandler: TextInsertionHandling {
+    func insertText(_ text: String) -> Bool {
+        guard !text.isEmpty else {
+            return true
+        }
+
+        guard
+            let source = CGEventSource(stateID: .hidSystemState),
+            let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
+            let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
+        else {
+            return false
+        }
+
+        let unicodeScalars = Array(text.utf16)
+        keyDown.keyboardSetUnicodeString(stringLength: unicodeScalars.count, unicodeString: unicodeScalars)
+        keyUp.keyboardSetUnicodeString(stringLength: unicodeScalars.count, unicodeString: unicodeScalars)
+        keyDown.post(tap: .cghidEventTap)
+        keyUp.post(tap: .cghidEventTap)
+        return true
+    }
+}
+
 final class AccessibilityTextService: TextSelectionHandling, @unchecked Sendable {
     private struct SelectionSnapshot {
         let element: AXUIElement
-        let fullText: String
         let selectedRange: CFRange
     }
 
+    private let accessibilityHandler: AccessibilityElementHandling
+    private let textInsertionHandler: TextInsertionHandling
+    private let hasAccessibilityPermission: @Sendable () -> Bool
     private var lastSnapshot: SelectionSnapshot?
 
+    init(
+        accessibilityHandler: AccessibilityElementHandling = LiveAccessibilityElementHandler(),
+        textInsertionHandler: TextInsertionHandling = LiveTextInsertionHandler(),
+        hasAccessibilityPermission: @escaping @Sendable () -> Bool = AXIsProcessTrusted
+    ) {
+        self.accessibilityHandler = accessibilityHandler
+        self.textInsertionHandler = textInsertionHandler
+        self.hasAccessibilityPermission = hasAccessibilityPermission
+    }
+
     func readSelection() -> Result<RewriteContext, TextSelectionError> {
-        guard AXIsProcessTrusted() else {
+        guard hasAccessibilityPermission() else {
             return .failure(.accessibilityPermissionMissing)
         }
 
@@ -41,7 +124,6 @@ final class AccessibilityTextService: TextSelectionHandling, @unchecked Sendable
 
         lastSnapshot = SelectionSnapshot(
             element: element,
-            fullText: fullText,
             selectedRange: selectedRange
         )
 
@@ -62,38 +144,23 @@ final class AccessibilityTextService: TextSelectionHandling, @unchecked Sendable
             return .failure(.writeFailed)
         }
 
-        let nsText = snapshot.fullText as NSString
-        let selectedRange = NSRange(
-            location: snapshot.selectedRange.location,
-            length: snapshot.selectedRange.length
-        )
-        let replacement = nsText.replacingCharacters(in: selectedRange, with: refinedText)
-
-        let setValueResult = AXUIElementSetAttributeValue(
-            snapshot.element,
-            kAXValueAttribute as CFString,
-            replacement as CFTypeRef
-        )
-        guard setValueResult == .success else {
-            return .failure(.writeFailed)
-        }
-
-        var collapsedRange = CFRange(
-            location: selectedRange.location + (refinedText as NSString).length,
-            length: 0
-        )
+        var selectedRange = snapshot.selectedRange
         guard
-            let rangeValue = AXValueCreate(.cfRange, &collapsedRange)
+            let rangeValue = AXValueCreate(.cfRange, &selectedRange)
         else {
             return .failure(.writeFailed)
         }
 
-        let setRangeResult = AXUIElementSetAttributeValue(
-            snapshot.element,
-            kAXSelectedTextRangeAttribute as CFString,
-            rangeValue
+        let setRangeResult = accessibilityHandler.setAttributeValue(
+            element: snapshot.element,
+            attribute: kAXSelectedTextRangeAttribute as CFString,
+            value: rangeValue
         )
         guard setRangeResult == .success else {
+            return .failure(.writeFailed)
+        }
+
+        guard textInsertionHandler.insertText(refinedText) else {
             return .failure(.writeFailed)
         }
 
@@ -114,11 +181,9 @@ final class AccessibilityTextService: TextSelectionHandling, @unchecked Sendable
 
     private func focusedElement() -> AXUIElement? {
         let appElement = AXUIElementCreateSystemWide()
-        var focused: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(
-            appElement,
-            kAXFocusedUIElementAttribute as CFString,
-            &focused
+        let (result, focused) = accessibilityHandler.copyAttributeValue(
+            element: appElement,
+            attribute: kAXFocusedUIElementAttribute as CFString
         )
 
         guard result == .success else {
@@ -133,22 +198,18 @@ final class AccessibilityTextService: TextSelectionHandling, @unchecked Sendable
             return editableValue
         }
 
-        var settable = DarwinBoolean(false)
-        let result = AXUIElementIsAttributeSettable(
-            element,
-            kAXValueAttribute as CFString,
-            &settable
+        let (result, settable) = accessibilityHandler.isAttributeSettable(
+            element: element,
+            attribute: kAXValueAttribute as CFString
         )
 
         return result == .success && settable.boolValue
     }
 
     private func stringAttribute(_ attribute: String, on element: AXUIElement) -> String? {
-        var value: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(
-            element,
-            attribute as CFString,
-            &value
+        let (result, value) = accessibilityHandler.copyAttributeValue(
+            element: element,
+            attribute: attribute as CFString
         )
 
         guard result == .success else {
@@ -159,11 +220,9 @@ final class AccessibilityTextService: TextSelectionHandling, @unchecked Sendable
     }
 
     private func boolAttribute(_ attribute: String, on element: AXUIElement) -> Bool? {
-        var value: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(
-            element,
-            attribute as CFString,
-            &value
+        let (result, value) = accessibilityHandler.copyAttributeValue(
+            element: element,
+            attribute: attribute as CFString
         )
 
         guard result == .success else {
@@ -174,11 +233,9 @@ final class AccessibilityTextService: TextSelectionHandling, @unchecked Sendable
     }
 
     private func selectedTextRange(on element: AXUIElement) -> CFRange? {
-        var value: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(
-            element,
-            kAXSelectedTextRangeAttribute as CFString,
-            &value
+        let (result, value) = accessibilityHandler.copyAttributeValue(
+            element: element,
+            attribute: kAXSelectedTextRangeAttribute as CFString
         )
 
         guard result == .success, let axValue = value, CFGetTypeID(axValue) == AXValueGetTypeID() else {
