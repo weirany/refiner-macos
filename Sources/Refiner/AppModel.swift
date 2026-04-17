@@ -5,6 +5,7 @@ final class AppModel {
     static let shared = AppModel()
 
     let settingsStore: SettingsStore
+    let launchAtLoginManager: LaunchAtLoginManager
     let availabilityMonitor: AvailabilityMonitor
     let statusNotifier: StatusNotifier
     let textService: AccessibilityTextService
@@ -13,11 +14,13 @@ final class AppModel {
 
     private init() {
         settingsStore = SettingsStore()
+        launchAtLoginManager = LaunchAtLoginManager(settingsStore: settingsStore)
         availabilityMonitor = AvailabilityMonitor()
         statusNotifier = StatusNotifier()
         textService = AccessibilityTextService()
         rewriteService = LocalRewriteService(settingsStore: settingsStore)
         hotkeyManager = HotkeyManager()
+        launchAtLoginManager.applyStoredPreference()
     }
 
     func refreshAvailability() {

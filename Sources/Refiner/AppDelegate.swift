@@ -35,11 +35,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func makeMenu() -> NSMenu {
         let menu = NSMenu()
         menu.addItem(
-            withTitle: "Refine Selected Text",
-            action: #selector(refineSelectedText),
-            keyEquivalent: ""
-        )
-        menu.addItem(
             withTitle: "Settings…",
             action: #selector(openSettings),
             keyEquivalent: ","
@@ -79,15 +74,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc
-    private func refineSelectedText() {
-        AppModel.shared.runRefinement()
-    }
-
-    @objc
     private func openSettings() {
         DispatchQueue.main.async {
             SettingsWindowController.shared.show(
                 settingsStore: AppModel.shared.settingsStore,
+                launchAtLoginManager: AppModel.shared.launchAtLoginManager,
                 availabilityMonitor: AppModel.shared.availabilityMonitor
             )
         }

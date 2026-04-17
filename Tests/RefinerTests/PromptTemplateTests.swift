@@ -149,3 +149,10 @@ func appIdentityFallsBackToExecutablePathWhenBundleIdentifierMissing() {
 
     #expect(identity.primaryLabel == "/tmp/Refiner")
 }
+
+@Test
+func appMenuTitlesExcludeManualRefineAction() {
+    let titles = AppMenu.menuTitles(versionTitle: "Version 1.1 (2)")
+
+    #expect(titles == ["Settings…", "Version 1.1 (2)", "Quit"])
+}

@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var settingsStore: SettingsStore
+    @ObservedObject var launchAtLoginManager: LaunchAtLoginManager
     @ObservedObject var availabilityMonitor: AvailabilityMonitor
 
     @State private var promptDraft = ""
@@ -25,6 +26,23 @@ struct SettingsView: View {
                             .font(.system(.body, design: .monospaced))
                             .foregroundStyle(.secondary)
                     }
+                }
+
+                GroupBox("Startup") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Toggle(
+                            "Launch Refiner when you log in",
+                            isOn: Binding(
+                                get: { launchAtLoginManager.isEnabled },
+                                set: { launchAtLoginManager.setEnabled($0) }
+                            )
+                        )
+
+                        Text(launchAtLoginManager.statusMessage)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 GroupBox("Apple Intelligence") {
@@ -115,6 +133,7 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             promptDraft = settingsStore.promptTemplate.rawValue
+            launchAtLoginManager.refreshStatus()
             availabilityMonitor.refresh()
             refreshAccessibilityPermission()
         }

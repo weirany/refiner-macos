@@ -24,6 +24,35 @@ func settingsStorePersistsPromptTemplate() throws {
 }
 
 @Test
+func settingsStoreDefaultsLaunchAtLoginToEnabled() {
+    let suiteName = "RefinerTests.LaunchAtLoginDefault.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer {
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    let store = SettingsStore(userDefaults: defaults)
+
+    #expect(store.launchAtLoginEnabled)
+}
+
+@Test
+func settingsStorePersistsLaunchAtLoginPreference() {
+    let suiteName = "RefinerTests.LaunchAtLoginPersist.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer {
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    let store = SettingsStore(userDefaults: defaults)
+    store.setLaunchAtLoginEnabled(false)
+
+    let reloaded = SettingsStore(userDefaults: defaults)
+
+    #expect(!reloaded.launchAtLoginEnabled)
+}
+
+@Test
 @MainActor
 func workflowStopsWhenModelUnavailable() async {
     let selectionService = MockTextSelectionService(

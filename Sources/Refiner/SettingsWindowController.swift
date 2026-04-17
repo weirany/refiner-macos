@@ -9,11 +9,13 @@ final class SettingsWindowController {
 
     func show(
         settingsStore: SettingsStore,
+        launchAtLoginManager: LaunchAtLoginManager,
         availabilityMonitor: AvailabilityMonitor
     ) {
         if window == nil {
             let contentView = SettingsView(
                 settingsStore: settingsStore,
+                launchAtLoginManager: launchAtLoginManager,
                 availabilityMonitor: availabilityMonitor
             )
             .frame(minWidth: 580, minHeight: 560)
@@ -31,10 +33,12 @@ final class SettingsWindowController {
         } else if let hostingController = window?.contentViewController as? NSHostingController<SettingsView> {
             hostingController.rootView = SettingsView(
                 settingsStore: settingsStore,
+                launchAtLoginManager: launchAtLoginManager,
                 availabilityMonitor: availabilityMonitor
             )
         }
 
+        launchAtLoginManager.refreshStatus()
         availabilityMonitor.refresh()
         window?.center()
         window?.makeKeyAndOrderFront(nil)
