@@ -10,10 +10,7 @@ func settingsStorePersistsPromptTemplate() throws {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
-    let store = SettingsStore(
-        userDefaults: defaults,
-        apiKeyStore: MockAPIKeyStore()
-    )
+    let store = SettingsStore(userDefaults: defaults)
     let updatedTemplate = """
     Rewrite politely:
     {original_text}
@@ -21,10 +18,7 @@ func settingsStorePersistsPromptTemplate() throws {
 
     try store.savePromptTemplate(updatedTemplate)
 
-    let reloaded = SettingsStore(
-        userDefaults: defaults,
-        apiKeyStore: MockAPIKeyStore()
-    )
+    let reloaded = SettingsStore(userDefaults: defaults)
 
     #expect(reloaded.promptTemplate.rawValue == updatedTemplate)
 }
@@ -37,10 +31,7 @@ func settingsStoreDefaultsLaunchAtLoginToEnabled() {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
-    let store = SettingsStore(
-        userDefaults: defaults,
-        apiKeyStore: MockAPIKeyStore()
-    )
+    let store = SettingsStore(userDefaults: defaults)
 
     #expect(store.launchAtLoginEnabled)
 }
@@ -53,16 +44,10 @@ func settingsStorePersistsLaunchAtLoginPreference() {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
-    let store = SettingsStore(
-        userDefaults: defaults,
-        apiKeyStore: MockAPIKeyStore()
-    )
+    let store = SettingsStore(userDefaults: defaults)
     store.setLaunchAtLoginEnabled(false)
 
-    let reloaded = SettingsStore(
-        userDefaults: defaults,
-        apiKeyStore: MockAPIKeyStore()
-    )
+    let reloaded = SettingsStore(userDefaults: defaults)
 
     #expect(!reloaded.launchAtLoginEnabled)
 }
@@ -75,10 +60,7 @@ func settingsStoreDefaultsOpenAIModel() {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
-    let store = SettingsStore(
-        userDefaults: defaults,
-        apiKeyStore: MockAPIKeyStore()
-    )
+    let store = SettingsStore(userDefaults: defaults)
 
     #expect(store.openAIModel == "gpt-5.4-nano")
 }
@@ -91,30 +73,28 @@ func settingsStorePersistsOpenAIModel() {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
-    let keyStore = MockAPIKeyStore()
-    let store = SettingsStore(userDefaults: defaults, apiKeyStore: keyStore)
+    let store = SettingsStore(userDefaults: defaults)
 
     store.saveOpenAIModel("gpt-5.4-mini")
 
-    let reloaded = SettingsStore(userDefaults: defaults, apiKeyStore: keyStore)
+    let reloaded = SettingsStore(userDefaults: defaults)
 
     #expect(reloaded.openAIModel == "gpt-5.4-mini")
 }
 
 @Test
-func settingsStorePersistsOpenAIAPIKeyInKeyStore() throws {
+func settingsStorePersistsOpenAIAPIKeyInUserDefaults() {
     let suiteName = "RefinerTests.OpenAIAPIKeyPersist.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
     defer {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
-    let keyStore = MockAPIKeyStore()
-    let store = SettingsStore(userDefaults: defaults, apiKeyStore: keyStore)
+    let store = SettingsStore(userDefaults: defaults)
 
-    try store.saveOpenAIAPIKey(" sk-test ")
+    store.saveOpenAIAPIKey(" sk-test ")
 
-    let reloaded = SettingsStore(userDefaults: defaults, apiKeyStore: keyStore)
+    let reloaded = SettingsStore(userDefaults: defaults)
 
     #expect(reloaded.openAIAPIKey == "sk-test")
     #expect(reloaded.hasOpenAIAPIKey)
@@ -205,22 +185,6 @@ func workflowLeavesTextUnchangedWhenRewriteFails() async {
 
     #expect(selectionService.replacedText == nil)
     #expect(notifier.events == [.running, .error("OpenAI returned an empty rewrite.")])
-}
-
-private final class MockAPIKeyStore: APIKeyStoring {
-    var apiKey: String?
-
-    func loadAPIKey() throws -> String? {
-        apiKey
-    }
-
-    func saveAPIKey(_ apiKey: String) throws {
-        self.apiKey = apiKey
-    }
-
-    func deleteAPIKey() throws {
-        apiKey = nil
-    }
 }
 
 @MainActor

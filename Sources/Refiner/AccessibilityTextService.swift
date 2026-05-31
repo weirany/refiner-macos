@@ -172,13 +172,6 @@ final class AccessibilityTextService: TextSelectionHandling, @unchecked Sendable
         AXIsProcessTrusted()
     }
 
-    @MainActor
-    static func requestAccessibilityPermission() -> Bool {
-        let key = "AXTrustedCheckOptionPrompt" as CFString
-        let options = [key: true] as CFDictionary
-        return AXIsProcessTrustedWithOptions(options)
-    }
-
     private func focusedElement() -> AXUIElement? {
         let appElement = AXUIElementCreateSystemWide()
         let (result, focused) = accessibilityHandler.copyAttributeValue(
