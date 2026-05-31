@@ -1,4 +1,5 @@
 import AppKit
+import Permiso
 import SwiftUI
 
 struct SettingsView: View {
@@ -13,18 +14,37 @@ struct SettingsView: View {
     @State private var apiKeyMessage: String?
     @State private var modelMessage: String?
     @State private var accessibilityGranted = AccessibilityTextService.hasAccessibilityPermission()
-
-    private let appIdentity = AppIdentity()
+    @State private var permissionMonitorTask: Task<Void, Never>?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("Refiner")
-                    .font(.system(size: 26, weight: .semibold, design: .rounded))
+                GroupBox {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .center, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Allow Accessibility control")
+                                    .font(.headline)
 
-                GroupBox("Shortcut") {
+                                Text(accessibilityMessage)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+
+                            Spacer()
+
+                            SwitchToggle(
+                                isOn: accessibilityGranted,
+                                action: toggleAccessibilityPermission
+                            )
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                GroupBox {
                     HStack {
-                        Text("Refine selected text")
+                        Text("Keyboard Shortcut")
                         Spacer()
                         Text("Option+R")
                             .font(.system(.body, design: .monospaced))
@@ -41,10 +61,6 @@ struct SettingsView: View {
                                 set: { launchAtLoginManager.setEnabled($0) }
                             )
                         )
-
-                        Text(launchAtLoginManager.statusMessage)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -100,36 +116,6 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                GroupBox("Accessibility") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(accessibilityMessage)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        Text("Current process: \(appIdentity.primaryLabel)")
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        HStack {
-                            Button("Request Permission") {
-                                _ = AccessibilityTextService.requestAccessibilityPermission()
-                                refreshAccessibilityPermission()
-                            }
-
-                            Button("Open Accessibility Settings") {
-                                openAccessibilitySettings()
-                            }
-
-                            Button("Refresh Permission Status") {
-                                refreshAccessibilityPermission()
-                            }
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
                 GroupBox("Prompt Template") {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("The template must include `{original_text}`.")
@@ -178,12 +164,16 @@ struct SettingsView: View {
             availabilityMonitor.refresh()
             refreshAccessibilityPermission()
         }
+        .onDisappear {
+            permissionMonitorTask?.cancel()
+            permissionMonitorTask = nil
+        }
     }
 
     private var accessibilityMessage: String {
         accessibilityGranted
-            ? "Accessibility permission is enabled."
-            : "Grant Accessibility permission so Refiner can read and replace the selected text in the focused editable field."
+            ? "Refiner can read and replace selected text in the focused editable field."
+            : "Turn this on so Refiner can read and replace selected text in the focused editable field."
     }
 
     private var availabilitySymbolName: String {
@@ -205,13 +195,9 @@ struct SettingsView: View {
     }
 
     private func saveOpenAIAPIKey() {
-        do {
-            try settingsStore.saveOpenAIAPIKey(apiKeyDraft)
-            apiKeyMessage = settingsStore.hasOpenAIAPIKey ? "Key saved." : "Key cleared."
-            availabilityMonitor.refresh()
-        } catch {
-            apiKeyMessage = "Key could not be saved."
-        }
+        settingsStore.saveOpenAIAPIKey(apiKeyDraft)
+        apiKeyMessage = settingsStore.hasOpenAIAPIKey ? "Key saved." : "Key cleared."
+        availabilityMonitor.refresh()
     }
 
     private func saveOpenAIModel() {
@@ -231,17 +217,85 @@ struct SettingsView: View {
         }
     }
 
-    private func openAccessibilitySettings() {
-        guard
-            let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
-        else {
+    private func requestAccessibilityPermission() {
+        if AccessibilityTextService.hasAccessibilityPermission() {
+            PermisoAssistant.shared.dismiss()
+            refreshAccessibilityPermission()
             return
         }
 
-        NSWorkspace.shared.open(url)
+        PermisoAssistant.shared.present(panel: .accessibility)
+        monitorAccessibilityPermission(until: true, dismissPermisoWhenMatched: true)
+        refreshAccessibilityPermission()
+    }
+
+    private func openAccessibilityPermissionSettingsForRevocation() {
+        NSWorkspace.shared.open(PermisoPanel.accessibility.settingsURL)
+        monitorAccessibilityPermission(until: false, dismissPermisoWhenMatched: false)
+        refreshAccessibilityPermission()
+    }
+
+    private func toggleAccessibilityPermission() {
+        if accessibilityGranted {
+            openAccessibilityPermissionSettingsForRevocation()
+        } else {
+            requestAccessibilityPermission()
+        }
     }
 
     private func refreshAccessibilityPermission() {
         accessibilityGranted = AccessibilityTextService.hasAccessibilityPermission()
+        if accessibilityGranted {
+            PermisoAssistant.shared.dismiss()
+        }
+    }
+
+    private func monitorAccessibilityPermission(
+        until expectedValue: Bool,
+        dismissPermisoWhenMatched: Bool
+    ) {
+        permissionMonitorTask?.cancel()
+        permissionMonitorTask = Task { @MainActor in
+            for _ in 0..<240 {
+                guard !Task.isCancelled else {
+                    return
+                }
+
+                if AccessibilityTextService.hasAccessibilityPermission() == expectedValue {
+                    refreshAccessibilityPermission()
+                    if dismissPermisoWhenMatched {
+                        PermisoAssistant.shared.dismiss()
+                    }
+                    return
+                }
+
+                try? await Task.sleep(for: .milliseconds(500))
+            }
+        }
+    }
+}
+
+private struct SwitchToggle: View {
+    let isOn: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            ZStack(alignment: isOn ? .trailing : .leading) {
+                Capsule()
+                    .fill(isOn ? Color.accentColor : Color(nsColor: .tertiaryLabelColor).opacity(0.35))
+
+                Circle()
+                    .fill(Color.white)
+                    .shadow(color: .black.opacity(0.22), radius: 1, x: 0, y: 1)
+                    .padding(3)
+            }
+            .frame(width: 52, height: 30)
+            .animation(.snappy(duration: 0.18), value: isOn)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Allow Accessibility control")
+        .accessibilityValue(isOn ? "On" : "Off")
+        .accessibilityAddTraits(.isButton)
     }
 }
