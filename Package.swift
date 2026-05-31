@@ -19,6 +19,7 @@ let package = Package(
             ],
             resources: [
                 .process("Resources/BuildInfo.plist"),
+                .process("Resources/MenuBarIconTemplate@2x.png"),
             ]
         ),
         .testTarget(

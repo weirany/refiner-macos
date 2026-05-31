@@ -64,20 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateStatusIcon(for state: StatusNotifier.ActivityState) {
-        let symbolName: String
-        switch state {
-        case .idle:
-            symbolName = "wand.and.sparkles"
-        case .running:
-            symbolName = "ellipsis.circle"
-        case .error:
-            symbolName = "exclamationmark.circle"
-        }
-
-        statusItem?.button?.image = NSImage(
-            systemSymbolName: symbolName,
-            accessibilityDescription: "Refiner"
-        )
+        statusItem?.button?.image = StatusIconImage.image(for: state)
     }
 
     @objc

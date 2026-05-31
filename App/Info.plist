@@ -8,6 +8,8 @@
     <string>Refiner</string>
     <key>CFBundleExecutable</key>
     <string>Refiner</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>com.weiranye.refiner</string>
     <key>CFBundleInfoDictionaryVersion</key>
