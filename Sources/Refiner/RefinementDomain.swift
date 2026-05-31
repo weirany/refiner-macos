@@ -36,19 +36,33 @@ enum TextSelectionError: Error, Equatable, Sendable {
     }
 }
 
-enum LocalRewriteError: Error, Equatable, Sendable {
-    case modelUnavailable(LocalModelAvailabilityState)
+enum RewriteAvailabilityState: Equatable, Sendable {
+    case available
+    case missingAPIKey
+
+    var message: String {
+        switch self {
+        case .available:
+            "OpenAI API key is configured."
+        case .missingAPIKey:
+            "OpenAI API key is missing. Open Settings and enter your API key."
+        }
+    }
+}
+
+enum RewriteError: Error, Equatable, Sendable {
+    case unavailable(RewriteAvailabilityState)
     case generationFailed(String)
     case emptyResponse
 
     var message: String {
         switch self {
-        case .modelUnavailable(let state):
+        case .unavailable(let state):
             state.message
         case .generationFailed(let description):
             description
         case .emptyResponse:
-            "The local model returned an empty rewrite."
+            "OpenAI returned an empty rewrite."
         }
     }
 }
@@ -63,9 +77,9 @@ protocol TextSelectionHandling {
 }
 
 @MainActor
-protocol LocalRewriting {
-    func currentAvailability() -> LocalModelAvailabilityState
-    func rewrite(_ context: RewriteContext) async -> Result<RewriteResult, LocalRewriteError>
+protocol Rewriting {
+    func currentAvailability() -> RewriteAvailabilityState
+    func rewrite(_ context: RewriteContext) async -> Result<RewriteResult, RewriteError>
 }
 
 @MainActor

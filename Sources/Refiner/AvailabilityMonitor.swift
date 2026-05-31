@@ -1,14 +1,17 @@
 import Combine
 import Foundation
-import FoundationModels
 
 @MainActor
 final class AvailabilityMonitor: ObservableObject {
-    @Published private(set) var state: LocalModelAvailabilityState = .available
+    @Published private(set) var state: RewriteAvailabilityState = .available
+
+    private let settingsStore: SettingsStore
+
+    init(settingsStore: SettingsStore) {
+        self.settingsStore = settingsStore
+    }
 
     func refresh() {
-        state = LocalModelAvailabilityStateMapper.map(
-            SystemLanguageModel.default.availability
-        )
+        state = settingsStore.hasOpenAIAPIKey ? .available : .missingAPIKey
     }
 }

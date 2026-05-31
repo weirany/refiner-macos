@@ -7,7 +7,11 @@ struct SettingsView: View {
     @ObservedObject var availabilityMonitor: AvailabilityMonitor
 
     @State private var promptDraft = ""
+    @State private var apiKeyDraft = ""
+    @State private var modelDraft = ""
     @State private var validationMessage: String?
+    @State private var apiKeyMessage: String?
+    @State private var modelMessage: String?
     @State private var accessibilityGranted = AccessibilityTextService.hasAccessibilityPermission()
 
     private let appIdentity = AppIdentity()
@@ -45,17 +49,52 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                GroupBox("Apple Intelligence") {
-                    VStack(alignment: .leading, spacing: 8) {
+                GroupBox("OpenAI") {
+                    VStack(alignment: .leading, spacing: 10) {
                         Label(availabilityMonitor.state.message, systemImage: availabilitySymbolName)
                             .foregroundStyle(availabilityColor)
 
-                        Text("Refiner is local-only and requires Apple’s on-device Foundation Models support.")
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("API Key")
+                                .font(.headline)
 
-                        Button("Refresh Status") {
-                            availabilityMonitor.refresh()
+                            HStack {
+                                SecureField("sk-…", text: $apiKeyDraft)
+                                    .textFieldStyle(.roundedBorder)
+
+                                Button("Save Key") {
+                                    saveOpenAIAPIKey()
+                                }
+
+                                if let apiKeyMessage {
+                                    Text(apiKeyMessage)
+                                        .foregroundStyle(apiKeyMessage.contains("saved") ? .green : .red)
+                                }
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Model")
+                                .font(.headline)
+
+                            HStack {
+                                TextField(SettingsStore.defaultOpenAIModel, text: $modelDraft)
+                                    .textFieldStyle(.roundedBorder)
+
+                                Button("Save Model") {
+                                    saveOpenAIModel()
+                                }
+
+                                Button("Restore") {
+                                    modelDraft = SettingsStore.defaultOpenAIModel
+                                    saveOpenAIModel()
+                                }
+
+                                if let modelMessage {
+                                    Text(modelMessage)
+                                        .foregroundStyle(modelMessage.contains("saved") ? .green : .red)
+                                }
+                            }
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -133,6 +172,8 @@ struct SettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             promptDraft = settingsStore.promptTemplate.rawValue
+            apiKeyDraft = settingsStore.openAIAPIKey
+            modelDraft = settingsStore.openAIModel
             launchAtLoginManager.refreshStatus()
             availabilityMonitor.refresh()
             refreshAccessibilityPermission()
@@ -149,7 +190,7 @@ struct SettingsView: View {
         switch availabilityMonitor.state {
         case .available:
             "checkmark.circle.fill"
-        case .deviceNotEligible, .appleIntelligenceNotEnabled, .modelNotReady:
+        case .missingAPIKey:
             "exclamationmark.triangle.fill"
         }
     }
@@ -158,9 +199,27 @@ struct SettingsView: View {
         switch availabilityMonitor.state {
         case .available:
             .green
-        case .deviceNotEligible, .appleIntelligenceNotEnabled, .modelNotReady:
+        case .missingAPIKey:
             .orange
         }
+    }
+
+    private func saveOpenAIAPIKey() {
+        do {
+            try settingsStore.saveOpenAIAPIKey(apiKeyDraft)
+            apiKeyMessage = settingsStore.hasOpenAIAPIKey ? "Key saved." : "Key cleared."
+            availabilityMonitor.refresh()
+        } catch {
+            apiKeyMessage = "Key could not be saved."
+        }
+    }
+
+    private func saveOpenAIModel() {
+        settingsStore.saveOpenAIModel(modelDraft)
+        if modelDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            modelDraft = settingsStore.openAIModel
+        }
+        modelMessage = "Model saved."
     }
 
     private func savePrompt() {

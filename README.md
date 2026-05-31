@@ -1,6 +1,6 @@
 # Refiner
 
-Refiner is a local-only macOS menu bar app that rewrites the selected text in the focused editable field using Apple's Foundation Models.
+Refiner is a macOS menu bar app that rewrites the selected text in the focused editable field using the OpenAI API. Add your OpenAI API key and model in Settings before using the shortcut.
 
 ## Run as a proper app bundle
 

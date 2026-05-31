@@ -9,16 +9,16 @@ final class AppModel {
     let availabilityMonitor: AvailabilityMonitor
     let statusNotifier: StatusNotifier
     let textService: AccessibilityTextService
-    let rewriteService: LocalRewriteService
+    let rewriteService: OpenAIRewriteService
     let hotkeyManager: HotkeyManager
 
     private init() {
         settingsStore = SettingsStore()
         launchAtLoginManager = LaunchAtLoginManager(settingsStore: settingsStore)
-        availabilityMonitor = AvailabilityMonitor()
+        availabilityMonitor = AvailabilityMonitor(settingsStore: settingsStore)
         statusNotifier = StatusNotifier()
         textService = AccessibilityTextService()
-        rewriteService = LocalRewriteService(settingsStore: settingsStore)
+        rewriteService = OpenAIRewriteService(settingsStore: settingsStore)
         hotkeyManager = HotkeyManager()
         launchAtLoginManager.applyStoredPreference()
     }
