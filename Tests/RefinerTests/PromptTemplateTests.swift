@@ -140,3 +140,20 @@ func appMenuTitlesIncludeManualRefineAction() {
 
     #expect(titles == ["Refine Selected Text", "Settings…", "Version 1.1 (2)", "Quit"])
 }
+
+@Test
+func appBundleDeclaresAppIcon() throws {
+    let repositoryRoot = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+    let infoPlistURL = repositoryRoot.appendingPathComponent("App/Info.plist")
+    let iconURL = repositoryRoot.appendingPathComponent("App/AppIcon.icns")
+    let data = try Data(contentsOf: infoPlistURL)
+    let plist = try #require(
+        PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+    )
+
+    #expect(plist["CFBundleIconFile"] as? String == "AppIcon")
+    #expect(FileManager.default.fileExists(atPath: iconURL.path))
+}
