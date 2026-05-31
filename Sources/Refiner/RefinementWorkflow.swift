@@ -1,7 +1,7 @@
 @MainActor
 struct RefinementWorkflow {
     let textService: TextSelectionHandling
-    let rewriteService: LocalRewriting
+    let rewriteService: Rewriting
     let notifier: WorkflowNotifying
 
     func refineSelection() async {

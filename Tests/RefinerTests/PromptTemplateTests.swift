@@ -29,22 +29,6 @@ func promptTemplateSubstitutesOriginalText() throws {
 }
 
 @Test
-func availabilityMappingCoversAllUnavailableReasons() {
-    #expect(
-        LocalModelAvailabilityStateMapper.map(.deviceNotEligible)
-        == .deviceNotEligible
-    )
-    #expect(
-        LocalModelAvailabilityStateMapper.map(.appleIntelligenceNotEnabled)
-        == .appleIntelligenceNotEnabled
-    )
-    #expect(
-        LocalModelAvailabilityStateMapper.map(.modelNotReady)
-        == .modelNotReady
-    )
-}
-
-@Test
 func appVersionDisplayFormatsShortVersionAndBuild() {
     let version = AppVersion(
         shortVersion: "1.2.3",
@@ -151,8 +135,8 @@ func appIdentityFallsBackToExecutablePathWhenBundleIdentifierMissing() {
 }
 
 @Test
-func appMenuTitlesExcludeManualRefineAction() {
+func appMenuTitlesIncludeManualRefineAction() {
     let titles = AppMenu.menuTitles(versionTitle: "Version 1.1 (2)")
 
-    #expect(titles == ["Settings…", "Version 1.1 (2)", "Quit"])
+    #expect(titles == ["Refine Selected Text", "Settings…", "Version 1.1 (2)", "Quit"])
 }

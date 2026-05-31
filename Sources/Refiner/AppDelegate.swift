@@ -34,6 +34,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func makeMenu() -> NSMenu {
         let menu = NSMenu()
+        let refineItem = menu.addItem(
+            withTitle: "Refine Selected Text",
+            action: #selector(refineSelectedText),
+            keyEquivalent: "r"
+        )
+        refineItem.keyEquivalentModifierMask = .option
+        menu.addItem(.separator())
         menu.addItem(
             withTitle: "Settings…",
             action: #selector(openSettings),
@@ -71,6 +78,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             systemSymbolName: symbolName,
             accessibilityDescription: "Refiner"
         )
+    }
+
+    @objc
+    private func refineSelectedText() {
+        AppModel.shared.runRefinement()
     }
 
     @objc

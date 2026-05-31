@@ -10,7 +10,10 @@ func settingsStorePersistsPromptTemplate() throws {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
-    let store = SettingsStore(userDefaults: defaults)
+    let store = SettingsStore(
+        userDefaults: defaults,
+        apiKeyStore: MockAPIKeyStore()
+    )
     let updatedTemplate = """
     Rewrite politely:
     {original_text}
@@ -18,7 +21,10 @@ func settingsStorePersistsPromptTemplate() throws {
 
     try store.savePromptTemplate(updatedTemplate)
 
-    let reloaded = SettingsStore(userDefaults: defaults)
+    let reloaded = SettingsStore(
+        userDefaults: defaults,
+        apiKeyStore: MockAPIKeyStore()
+    )
 
     #expect(reloaded.promptTemplate.rawValue == updatedTemplate)
 }
@@ -31,7 +37,10 @@ func settingsStoreDefaultsLaunchAtLoginToEnabled() {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
-    let store = SettingsStore(userDefaults: defaults)
+    let store = SettingsStore(
+        userDefaults: defaults,
+        apiKeyStore: MockAPIKeyStore()
+    )
 
     #expect(store.launchAtLoginEnabled)
 }
@@ -44,17 +53,76 @@ func settingsStorePersistsLaunchAtLoginPreference() {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
-    let store = SettingsStore(userDefaults: defaults)
+    let store = SettingsStore(
+        userDefaults: defaults,
+        apiKeyStore: MockAPIKeyStore()
+    )
     store.setLaunchAtLoginEnabled(false)
 
-    let reloaded = SettingsStore(userDefaults: defaults)
+    let reloaded = SettingsStore(
+        userDefaults: defaults,
+        apiKeyStore: MockAPIKeyStore()
+    )
 
     #expect(!reloaded.launchAtLoginEnabled)
 }
 
 @Test
+func settingsStoreDefaultsOpenAIModel() {
+    let suiteName = "RefinerTests.OpenAIModelDefault.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer {
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    let store = SettingsStore(
+        userDefaults: defaults,
+        apiKeyStore: MockAPIKeyStore()
+    )
+
+    #expect(store.openAIModel == "gpt-5.4-nano")
+}
+
+@Test
+func settingsStorePersistsOpenAIModel() {
+    let suiteName = "RefinerTests.OpenAIModelPersist.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer {
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    let keyStore = MockAPIKeyStore()
+    let store = SettingsStore(userDefaults: defaults, apiKeyStore: keyStore)
+
+    store.saveOpenAIModel("gpt-5.4-mini")
+
+    let reloaded = SettingsStore(userDefaults: defaults, apiKeyStore: keyStore)
+
+    #expect(reloaded.openAIModel == "gpt-5.4-mini")
+}
+
+@Test
+func settingsStorePersistsOpenAIAPIKeyInKeyStore() throws {
+    let suiteName = "RefinerTests.OpenAIAPIKeyPersist.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer {
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    let keyStore = MockAPIKeyStore()
+    let store = SettingsStore(userDefaults: defaults, apiKeyStore: keyStore)
+
+    try store.saveOpenAIAPIKey(" sk-test ")
+
+    let reloaded = SettingsStore(userDefaults: defaults, apiKeyStore: keyStore)
+
+    #expect(reloaded.openAIAPIKey == "sk-test")
+    #expect(reloaded.hasOpenAIAPIKey)
+}
+
+@Test
 @MainActor
-func workflowStopsWhenModelUnavailable() async {
+func workflowStopsWhenAPIKeyMissing() async {
     let selectionService = MockTextSelectionService(
         readResult: .success(
             RewriteContext(
@@ -65,7 +133,7 @@ func workflowStopsWhenModelUnavailable() async {
         )
     )
     let rewriteService = MockRewriteService(
-        availability: .appleIntelligenceNotEnabled
+        availability: .missingAPIKey
     )
     let notifier = MockNotifier()
     let workflow = RefinementWorkflow(
@@ -77,7 +145,7 @@ func workflowStopsWhenModelUnavailable() async {
     await workflow.refineSelection()
 
     #expect(selectionService.readCount == 0)
-    #expect(notifier.events == [.error("Apple Intelligence is turned off. Enable it in System Settings to use Refiner.")])
+    #expect(notifier.events == [.error("OpenAI API key is missing. Open Settings and enter your API key.")])
 }
 
 @Test
@@ -124,7 +192,7 @@ func workflowLeavesTextUnchangedWhenRewriteFails() async {
     )
     let rewriteService = MockRewriteService(
         availability: .available,
-        rewriteResult: .failure(LocalRewriteError.emptyResponse)
+        rewriteResult: .failure(RewriteError.emptyResponse)
     )
     let notifier = MockNotifier()
     let workflow = RefinementWorkflow(
@@ -136,7 +204,23 @@ func workflowLeavesTextUnchangedWhenRewriteFails() async {
     await workflow.refineSelection()
 
     #expect(selectionService.replacedText == nil)
-    #expect(notifier.events == [.running, .error("The local model returned an empty rewrite.")])
+    #expect(notifier.events == [.running, .error("OpenAI returned an empty rewrite.")])
+}
+
+private final class MockAPIKeyStore: APIKeyStoring {
+    var apiKey: String?
+
+    func loadAPIKey() throws -> String? {
+        apiKey
+    }
+
+    func saveAPIKey(_ apiKey: String) throws {
+        self.apiKey = apiKey
+    }
+
+    func deleteAPIKey() throws {
+        apiKey = nil
+    }
 }
 
 @MainActor
@@ -164,17 +248,17 @@ private final class MockTextSelectionService: TextSelectionHandling, @unchecked 
 }
 
 @MainActor
-private struct MockRewriteService: LocalRewriting, Sendable {
-    let availability: LocalModelAvailabilityState
-    var rewriteResult: Result<RewriteResult, LocalRewriteError> = .success(
+private struct MockRewriteService: Rewriting, Sendable {
+    let availability: RewriteAvailabilityState
+    var rewriteResult: Result<RewriteResult, RewriteError> = .success(
         RewriteResult(rewrittenText: "hello")
     )
 
-    func currentAvailability() -> LocalModelAvailabilityState {
+    func currentAvailability() -> RewriteAvailabilityState {
         availability
     }
 
-    func rewrite(_ context: RewriteContext) async -> Result<RewriteResult, LocalRewriteError> {
+    func rewrite(_ context: RewriteContext) async -> Result<RewriteResult, RewriteError> {
         rewriteResult
     }
 }
