@@ -15,4 +15,8 @@ struct AppIdentity: Equatable, Sendable {
     var primaryLabel: String {
         bundleIdentifier ?? executablePath
     }
+
+    var statusItemAutosaveName: String {
+        "\(bundleIdentifier ?? "Refiner").statusItem"
+    }
 }

@@ -125,6 +125,16 @@ func appIdentityUsesBundleIdentifierWhenPresent() {
 }
 
 @Test
+func appIdentityProvidesStableStatusItemAutosaveName() {
+    let identity = AppIdentity(
+        bundleIdentifier: "com.weiranye.refiner",
+        executablePath: "/Applications/Refiner.app/Contents/MacOS/Refiner"
+    )
+
+    #expect(identity.statusItemAutosaveName == "com.weiranye.refiner.statusItem")
+}
+
+@Test
 func appIdentityFallsBackToExecutablePathWhenBundleIdentifierMissing() {
     let identity = AppIdentity(
         bundleIdentifier: nil,

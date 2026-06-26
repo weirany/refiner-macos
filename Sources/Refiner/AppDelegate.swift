@@ -3,6 +3,7 @@ import AppKit
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
+    private let appIdentity = AppIdentity()
     private let appVersion = AppVersion()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -25,6 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func configureStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        item.autosaveName = nil
+        item.autosaveName = appIdentity.statusItemAutosaveName
         item.button?.imagePosition = .imageOnly
         item.button?.toolTip = "Refiner"
         item.menu = makeMenu()
