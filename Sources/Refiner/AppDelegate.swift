@@ -1,8 +1,11 @@
 import AppKit
+import Combine
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
+    private var refineMenuItem: NSMenuItem?
+    private var settingsCancellable: AnyCancellable?
     private let appIdentity = AppIdentity()
     private let appVersion = AppVersion()
 
@@ -13,11 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.updateStatusIcon(for: state)
         }
         AppModel.shared.refreshAvailability()
-        AppModel.shared.hotkeyManager.register {
-            Task { @MainActor in
-                AppModel.shared.runRefinement()
-            }
-        }
+        registerRefinementHotkey(AppModel.shared.settingsStore.keyboardShortcut)
+        observeKeyboardShortcutChanges()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -40,9 +40,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let refineItem = menu.addItem(
             withTitle: "Refine Selected Text",
             action: #selector(refineSelectedText),
-            keyEquivalent: "r"
+            keyEquivalent: ""
         )
-        refineItem.keyEquivalentModifierMask = .option
+        applyKeyboardShortcut(AppModel.shared.settingsStore.keyboardShortcut, to: refineItem)
+        self.refineMenuItem = refineItem
         menu.addItem(.separator())
         menu.addItem(
             withTitle: "Settings…",
@@ -68,6 +69,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateStatusIcon(for state: StatusNotifier.ActivityState) {
         statusItem?.button?.image = StatusIconImage.image(for: state)
+    }
+
+    private func observeKeyboardShortcutChanges() {
+        settingsCancellable = AppModel.shared.settingsStore.$keyboardShortcut
+            .dropFirst()
+            .sink { [weak self] shortcut in
+                self?.registerRefinementHotkey(shortcut)
+                if let refineMenuItem = self?.refineMenuItem {
+                    self?.applyKeyboardShortcut(shortcut, to: refineMenuItem)
+                }
+            }
+    }
+
+    private func registerRefinementHotkey(_ shortcut: RefinerKeyboardShortcut) {
+        AppModel.shared.hotkeyManager.register(shortcut: shortcut) {
+            Task { @MainActor in
+                AppModel.shared.runRefinement()
+            }
+        }
+    }
+
+    private func applyKeyboardShortcut(
+        _ shortcut: RefinerKeyboardShortcut,
+        to menuItem: NSMenuItem
+    ) {
+        menuItem.keyEquivalent = shortcut.keyEquivalent
+        menuItem.keyEquivalentModifierMask = shortcut.appKitModifierFlags
     }
 
     @objc

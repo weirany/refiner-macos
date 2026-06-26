@@ -53,6 +53,56 @@ func settingsStorePersistsLaunchAtLoginPreference() {
 }
 
 @Test
+func settingsStoreDefaultsKeyboardShortcutToOptionR() {
+    let suiteName = "RefinerTests.KeyboardShortcutDefault.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer {
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    let store = SettingsStore(userDefaults: defaults)
+
+    #expect(store.keyboardShortcut == .defaultShortcut)
+    #expect(store.keyboardShortcut.displayName == "Option+R")
+}
+
+@Test
+func settingsStorePersistsKeyboardShortcut() {
+    let suiteName = "RefinerTests.KeyboardShortcutPersist.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer {
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    let store = SettingsStore(userDefaults: defaults)
+
+    store.saveKeyboardShortcut(.init(modifiers: [.control, .option], key: .space))
+
+    let reloaded = SettingsStore(userDefaults: defaults)
+
+    #expect(reloaded.keyboardShortcut == .init(modifiers: [.control, .option], key: .space))
+    #expect(reloaded.keyboardShortcut.displayName == "Control+Option+Space")
+}
+
+@Test
+func settingsStoreRestoresDefaultKeyboardShortcut() {
+    let suiteName = "RefinerTests.KeyboardShortcutRestore.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defer {
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    let store = SettingsStore(userDefaults: defaults)
+    store.saveKeyboardShortcut(.init(modifiers: [.command, .shift], key: .k))
+
+    store.restoreDefaultKeyboardShortcut()
+
+    let reloaded = SettingsStore(userDefaults: defaults)
+
+    #expect(reloaded.keyboardShortcut == .defaultShortcut)
+}
+
+@Test
 func settingsStoreDefaultsOpenAIModel() {
     let suiteName = "RefinerTests.OpenAIModelDefault.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!

@@ -7,6 +7,7 @@ final class SettingsStore: ObservableObject {
         static let launchAtLoginEnabled = "launchAtLoginEnabled"
         static let openAIAPIKey = "openAIAPIKey"
         static let openAIModel = "openAIModel"
+        static let keyboardShortcut = "keyboardShortcut"
     }
 
     static let defaultOpenAIModel = "gpt-5.4-nano"
@@ -16,6 +17,7 @@ final class SettingsStore: ObservableObject {
     @Published private(set) var launchAtLoginEnabled: Bool
     @Published private(set) var openAIAPIKey: String
     @Published private(set) var openAIModel: String
+    @Published private(set) var keyboardShortcut: RefinerKeyboardShortcut
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
@@ -41,6 +43,13 @@ final class SettingsStore: ObservableObject {
             openAIModel = storedModel
         } else {
             openAIModel = Self.defaultOpenAIModel
+        }
+
+        if let shortcutData = userDefaults.data(forKey: Keys.keyboardShortcut),
+           let shortcut = try? JSONDecoder().decode(RefinerKeyboardShortcut.self, from: shortcutData) {
+            keyboardShortcut = shortcut
+        } else {
+            keyboardShortcut = .defaultShortcut
         }
     }
 
@@ -70,6 +79,19 @@ final class SettingsStore: ObservableObject {
         let resolvedModel = model.isEmpty ? Self.defaultOpenAIModel : model
         userDefaults.set(resolvedModel, forKey: Keys.openAIModel)
         openAIModel = resolvedModel
+    }
+
+    func saveKeyboardShortcut(_ shortcut: RefinerKeyboardShortcut) {
+        guard let data = try? JSONEncoder().encode(shortcut) else {
+            return
+        }
+
+        userDefaults.set(data, forKey: Keys.keyboardShortcut)
+        keyboardShortcut = shortcut
+    }
+
+    func restoreDefaultKeyboardShortcut() {
+        saveKeyboardShortcut(.defaultShortcut)
     }
 
     var hasOpenAIAPIKey: Bool {

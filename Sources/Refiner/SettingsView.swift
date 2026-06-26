@@ -43,13 +43,48 @@ struct SettingsView: View {
                 }
 
                 GroupBox {
-                    HStack {
-                        Text("Keyboard Shortcut")
-                        Spacer()
-                        Text("Option+R")
-                            .font(.system(.body, design: .monospaced))
-                            .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("Keyboard Shortcut")
+                                .font(.headline)
+                            Spacer()
+                            Text(settingsStore.keyboardShortcut.displayName)
+                                .font(.system(.body, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+
+                        HStack(spacing: 14) {
+                            ForEach(RefinerKeyboardShortcut.Modifier.allCases, id: \.self) { modifier in
+                                Toggle(
+                                    modifier.displayName,
+                                    isOn: modifierBinding(for: modifier)
+                                )
+                                .toggleStyle(.checkbox)
+                            }
+                        }
+
+                        HStack {
+                            Picker(
+                                "Key",
+                                selection: Binding(
+                                    get: { settingsStore.keyboardShortcut.key },
+                                    set: { saveKeyboardShortcut(key: $0) }
+                                )
+                            ) {
+                                ForEach(RefinerKeyboardShortcut.Key.allCases) { key in
+                                    Text(key.displayName).tag(key)
+                                }
+                            }
+                            .frame(width: 160)
+
+                            Button("Restore Default") {
+                                settingsStore.restoreDefaultKeyboardShortcut()
+                            }
+
+                            Spacer()
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 GroupBox("Startup") {
@@ -192,6 +227,31 @@ struct SettingsView: View {
         case .missingAPIKey:
             .orange
         }
+    }
+
+    private func modifierBinding(
+        for modifier: RefinerKeyboardShortcut.Modifier
+    ) -> Binding<Bool> {
+        Binding(
+            get: {
+                settingsStore.keyboardShortcut.modifiers.contains(modifier)
+            },
+            set: { isEnabled in
+                var shortcut = settingsStore.keyboardShortcut
+                if isEnabled {
+                    shortcut.modifiers.insert(modifier)
+                } else if shortcut.modifiers.count > 1 {
+                    shortcut.modifiers.remove(modifier)
+                }
+                settingsStore.saveKeyboardShortcut(shortcut)
+            }
+        )
+    }
+
+    private func saveKeyboardShortcut(key: RefinerKeyboardShortcut.Key) {
+        var shortcut = settingsStore.keyboardShortcut
+        shortcut.key = key
+        settingsStore.saveKeyboardShortcut(shortcut)
     }
 
     private func saveOpenAIAPIKey() {

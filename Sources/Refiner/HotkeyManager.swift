@@ -6,7 +6,10 @@ final class HotkeyManager {
     private var eventHandler: EventHandlerRef?
     private var handler: (@Sendable () -> Void)?
 
-    func register(handler: @escaping @Sendable () -> Void) {
+    func register(
+        shortcut: RefinerKeyboardShortcut,
+        handler: @escaping @Sendable () -> Void
+    ) {
         self.handler = handler
 
         if eventHandler == nil {
@@ -54,8 +57,8 @@ final class HotkeyManager {
 
         let hotKeyID = EventHotKeyID(signature: fourCharCode("RFIN"), id: 1)
         RegisterEventHotKey(
-            UInt32(kVK_ANSI_R),
-            UInt32(optionKey),
+            shortcut.key.carbonKeyCode,
+            shortcut.carbonModifierFlags,
             hotKeyID,
             GetApplicationEventTarget(),
             0,
