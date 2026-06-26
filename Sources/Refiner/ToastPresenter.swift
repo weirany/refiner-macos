@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class ToastPresenter {
+final class ToastPresenter: ToastPresenting {
     private var panel: NSPanel?
     private var dismissTask: Task<Void, Never>?
 
