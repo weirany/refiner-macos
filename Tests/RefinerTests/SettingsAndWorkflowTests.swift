@@ -133,21 +133,42 @@ func settingsStorePersistsOpenAIModel() {
 }
 
 @Test
-func settingsStorePersistsOpenAIAPIKeyInUserDefaults() {
+func settingsStorePersistsOpenAIAPIKeyInKeychain() {
     let suiteName = "RefinerTests.OpenAIAPIKeyPersist.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suiteName)!
+    let apiKeyStore = MockOpenAIAPIKeyStore()
     defer {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
-    let store = SettingsStore(userDefaults: defaults)
+    let store = SettingsStore(userDefaults: defaults, openAIAPIKeyStore: apiKeyStore)
 
     store.saveOpenAIAPIKey(" sk-test ")
 
-    let reloaded = SettingsStore(userDefaults: defaults)
+    let reloaded = SettingsStore(userDefaults: defaults, openAIAPIKeyStore: apiKeyStore)
 
     #expect(reloaded.openAIAPIKey == "sk-test")
     #expect(reloaded.hasOpenAIAPIKey)
+    #expect(defaults.string(forKey: "openAIAPIKey") == nil)
+}
+
+@Test
+func settingsStoreClearsOpenAIAPIKeyFromKeychain() {
+    let suiteName = "RefinerTests.OpenAIAPIKeyClear.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    let apiKeyStore = MockOpenAIAPIKeyStore(initialValue: "sk-test")
+    defer {
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    let store = SettingsStore(userDefaults: defaults, openAIAPIKeyStore: apiKeyStore)
+
+    store.saveOpenAIAPIKey(" ")
+
+    let reloaded = SettingsStore(userDefaults: defaults, openAIAPIKeyStore: apiKeyStore)
+
+    #expect(reloaded.openAIAPIKey == "")
+    #expect(!reloaded.hasOpenAIAPIKey)
 }
 
 @Test
@@ -297,5 +318,25 @@ private final class MockNotifier: WorkflowNotifying, @unchecked Sendable {
 
     func showError(_ message: String) {
         events.append(.error(message))
+    }
+}
+
+private final class MockOpenAIAPIKeyStore: OpenAIAPIKeyStoring {
+    private var value: String?
+
+    init(initialValue: String? = nil) {
+        self.value = initialValue
+    }
+
+    func loadAPIKey() -> String {
+        value ?? ""
+    }
+
+    func saveAPIKey(_ apiKey: String) {
+        value = apiKey
+    }
+
+    func deleteAPIKey() {
+        value = nil
     }
 }

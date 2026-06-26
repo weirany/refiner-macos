@@ -5,7 +5,6 @@ final class SettingsStore: ObservableObject {
     private enum Keys {
         static let promptTemplate = "promptTemplate"
         static let launchAtLoginEnabled = "launchAtLoginEnabled"
-        static let openAIAPIKey = "openAIAPIKey"
         static let openAIModel = "openAIModel"
         static let keyboardShortcut = "keyboardShortcut"
     }
@@ -13,14 +12,19 @@ final class SettingsStore: ObservableObject {
     static let defaultOpenAIModel = "gpt-5.4-nano"
 
     private let userDefaults: UserDefaults
+    private let openAIAPIKeyStore: OpenAIAPIKeyStoring
     @Published private(set) var promptTemplate: PromptTemplate
     @Published private(set) var launchAtLoginEnabled: Bool
     @Published private(set) var openAIAPIKey: String
     @Published private(set) var openAIModel: String
     @Published private(set) var keyboardShortcut: RefinerKeyboardShortcut
 
-    init(userDefaults: UserDefaults = .standard) {
+    init(
+        userDefaults: UserDefaults = .standard,
+        openAIAPIKeyStore: OpenAIAPIKeyStoring = KeychainOpenAIAPIKeyStore()
+    ) {
         self.userDefaults = userDefaults
+        self.openAIAPIKeyStore = openAIAPIKeyStore
         if userDefaults.object(forKey: Keys.launchAtLoginEnabled) == nil {
             launchAtLoginEnabled = true
             userDefaults.set(true, forKey: Keys.launchAtLoginEnabled)
@@ -35,8 +39,7 @@ final class SettingsStore: ObservableObject {
             promptTemplate = try! PromptTemplate(rawValue: PromptTemplate.defaultValue)
         }
 
-        openAIAPIKey = userDefaults.string(forKey: Keys.openAIAPIKey)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        openAIAPIKey = openAIAPIKeyStore.loadAPIKey()
         let storedModel = userDefaults.string(forKey: Keys.openAIModel)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if let storedModel, !storedModel.isEmpty {
@@ -67,9 +70,9 @@ final class SettingsStore: ObservableObject {
     func saveOpenAIAPIKey(_ rawValue: String) {
         let apiKey = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         if apiKey.isEmpty {
-            userDefaults.removeObject(forKey: Keys.openAIAPIKey)
+            openAIAPIKeyStore.deleteAPIKey()
         } else {
-            userDefaults.set(apiKey, forKey: Keys.openAIAPIKey)
+            openAIAPIKeyStore.saveAPIKey(apiKey)
         }
         openAIAPIKey = apiKey
     }
