@@ -187,8 +187,8 @@ final class AccessibilityTextService: TextSelectionHandling, @unchecked Sendable
     }
 
     private func isEditable(_ element: AXUIElement) -> Bool {
-        if let editableValue = boolAttribute("AXEditable", on: element) {
-            return editableValue
+        if boolAttribute("AXEditable", on: element) == true {
+            return true
         }
 
         let (result, settable) = accessibilityHandler.isAttributeSettable(
@@ -196,7 +196,11 @@ final class AccessibilityTextService: TextSelectionHandling, @unchecked Sendable
             attribute: kAXValueAttribute as CFString
         )
 
-        return result == .success && settable.boolValue
+        if result == .success {
+            return settable.boolValue
+        }
+
+        return false
     }
 
     private func stringAttribute(_ attribute: String, on element: AXUIElement) -> String? {

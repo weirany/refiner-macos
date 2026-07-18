@@ -44,8 +44,58 @@ func accessibilityTextServiceReplacesOnlySelectedRange() {
     #expect(handler.setAttributeNames == [kAXSelectedTextRangeAttribute as String])
 }
 
+@Test
+@MainActor
+func accessibilityTextServiceAcceptsSettableFieldWhenAXEditableIsFalse() {
+    let targetElement = AXUIElementCreateApplication(ProcessInfo.processInfo.processIdentifier)
+    let handler = MockAccessibilityElementHandler(
+        focusedElement: targetElement,
+        fullText: "Hello world",
+        selectedRange: CFRange(location: 6, length: 5),
+        roleDescription: "text area",
+        editableAttribute: false,
+        valueIsSettable: true
+    )
+    let service = AccessibilityTextService(
+        accessibilityHandler: handler,
+        textInsertionHandler: MockTextInsertionHandler(),
+        hasAccessibilityPermission: { true }
+    )
+
+    let result = service.readSelection()
+
+    switch result {
+    case .success(let context):
+        #expect(context.selectedText == "world")
+    case .failure(let error):
+        Issue.record("Expected settable field to be accepted, got \(error)")
+    }
+}
+
+@Test
+@MainActor
+func accessibilityTextServiceRejectsNonSettableFieldWhenAXEditableIsFalse() {
+    let targetElement = AXUIElementCreateApplication(ProcessInfo.processInfo.processIdentifier)
+    let handler = MockAccessibilityElementHandler(
+        focusedElement: targetElement,
+        fullText: "Hello world",
+        selectedRange: CFRange(location: 6, length: 5),
+        roleDescription: "text area",
+        editableAttribute: false,
+        valueIsSettable: false
+    )
+    let service = AccessibilityTextService(
+        accessibilityHandler: handler,
+        textInsertionHandler: MockTextInsertionHandler(),
+        hasAccessibilityPermission: { true }
+    )
+
+    #expect(service.readSelection() == .failure(.fieldNotEditable))
+}
+
 private final class MockAccessibilityElementHandler: AccessibilityElementHandling, @unchecked Sendable {
     private let focusedElement: AXUIElement
+    private let valueIsSettable: Bool
     private var attributes: [String: CFTypeRef] = [:]
     private(set) var setAttributeNames: [String] = []
 
@@ -53,15 +103,18 @@ private final class MockAccessibilityElementHandler: AccessibilityElementHandlin
         focusedElement: AXUIElement,
         fullText: String,
         selectedRange: CFRange,
-        roleDescription: String
+        roleDescription: String,
+        editableAttribute: Bool = true,
+        valueIsSettable: Bool = true
     ) {
         self.focusedElement = focusedElement
+        self.valueIsSettable = valueIsSettable
         attributes[kAXValueAttribute as String] = fullText as CFTypeRef
         attributes[kAXRoleDescriptionAttribute as String] = roleDescription as CFTypeRef
 
         var mutableRange = selectedRange
         attributes[kAXSelectedTextRangeAttribute as String] = AXValueCreate(.cfRange, &mutableRange)
-        attributes["AXEditable"] = true as CFTypeRef
+        attributes["AXEditable"] = editableAttribute as CFTypeRef
     }
 
     func copyAttributeValue(
@@ -91,7 +144,7 @@ private final class MockAccessibilityElementHandler: AccessibilityElementHandlin
         element: AXUIElement,
         attribute: CFString
     ) -> (AXError, DarwinBoolean) {
-        (.success, true)
+        (.success, DarwinBoolean(valueIsSettable))
     }
 }
 
