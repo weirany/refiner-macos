@@ -191,16 +191,29 @@ final class AccessibilityTextService: TextSelectionHandling, @unchecked Sendable
             return true
         }
 
-        let (result, settable) = accessibilityHandler.isAttributeSettable(
-            element: element,
-            attribute: kAXValueAttribute as CFString
-        )
-
-        if result == .success {
-            return settable.boolValue
+        if isAttributeSettable(kAXValueAttribute, on: element)
+            || isAttributeSettable(kAXSelectedTextRangeAttribute, on: element) {
+            return true
         }
 
-        return false
+        let textEntryRoles = [
+            kAXTextFieldRole,
+            kAXTextAreaRole,
+            kAXComboBoxRole,
+        ]
+        let role = stringAttribute(kAXRoleAttribute, on: element)
+
+        return role.map(textEntryRoles.contains) == true
+            && selectedTextRange(on: element) != nil
+    }
+
+    private func isAttributeSettable(_ attribute: String, on element: AXUIElement) -> Bool {
+        let (result, settable) = accessibilityHandler.isAttributeSettable(
+            element: element,
+            attribute: attribute as CFString
+        )
+
+        return result == .success && settable.boolValue
     }
 
     private func stringAttribute(_ attribute: String, on element: AXUIElement) -> String? {

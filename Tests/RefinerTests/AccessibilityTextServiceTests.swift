@@ -81,8 +81,10 @@ func accessibilityTextServiceRejectsNonSettableFieldWhenAXEditableIsFalse() {
         fullText: "Hello world",
         selectedRange: CFRange(location: 6, length: 5),
         roleDescription: "text area",
+        role: kAXStaticTextRole,
         editableAttribute: false,
-        valueIsSettable: false
+        valueIsSettable: false,
+        selectedRangeIsSettable: false
     )
     let service = AccessibilityTextService(
         accessibilityHandler: handler,
@@ -93,9 +95,40 @@ func accessibilityTextServiceRejectsNonSettableFieldWhenAXEditableIsFalse() {
     #expect(service.readSelection() == .failure(.fieldNotEditable))
 }
 
+@Test
+@MainActor
+func accessibilityTextServiceAcceptsTextAreaRoleWhenElectronReportsNonEditable() {
+    let targetElement = AXUIElementCreateApplication(ProcessInfo.processInfo.processIdentifier)
+    let handler = MockAccessibilityElementHandler(
+        focusedElement: targetElement,
+        fullText: "Hello Slack",
+        selectedRange: CFRange(location: 6, length: 5),
+        roleDescription: "text area",
+        role: kAXTextAreaRole,
+        editableAttribute: false,
+        valueIsSettable: false,
+        selectedRangeIsSettable: false
+    )
+    let service = AccessibilityTextService(
+        accessibilityHandler: handler,
+        textInsertionHandler: MockTextInsertionHandler(),
+        hasAccessibilityPermission: { true }
+    )
+
+    let result = service.readSelection()
+
+    switch result {
+    case .success(let context):
+        #expect(context.selectedText == "Slack")
+    case .failure(let error):
+        Issue.record("Expected text-area role fallback to succeed, got \(error)")
+    }
+}
+
 private final class MockAccessibilityElementHandler: AccessibilityElementHandling, @unchecked Sendable {
     private let focusedElement: AXUIElement
     private let valueIsSettable: Bool
+    private let selectedRangeIsSettable: Bool
     private var attributes: [String: CFTypeRef] = [:]
     private(set) var setAttributeNames: [String] = []
 
@@ -104,12 +137,16 @@ private final class MockAccessibilityElementHandler: AccessibilityElementHandlin
         fullText: String,
         selectedRange: CFRange,
         roleDescription: String,
+        role: String = kAXTextAreaRole,
         editableAttribute: Bool = true,
-        valueIsSettable: Bool = true
+        valueIsSettable: Bool = true,
+        selectedRangeIsSettable: Bool = true
     ) {
         self.focusedElement = focusedElement
         self.valueIsSettable = valueIsSettable
+        self.selectedRangeIsSettable = selectedRangeIsSettable
         attributes[kAXValueAttribute as String] = fullText as CFTypeRef
+        attributes[kAXRoleAttribute as String] = role as CFTypeRef
         attributes[kAXRoleDescriptionAttribute as String] = roleDescription as CFTypeRef
 
         var mutableRange = selectedRange
@@ -144,7 +181,10 @@ private final class MockAccessibilityElementHandler: AccessibilityElementHandlin
         element: AXUIElement,
         attribute: CFString
     ) -> (AXError, DarwinBoolean) {
-        (.success, DarwinBoolean(valueIsSettable))
+        let isSettable = attribute as String == kAXSelectedTextRangeAttribute
+            ? selectedRangeIsSettable
+            : valueIsSettable
+        return (.success, DarwinBoolean(isSettable))
     }
 }
 
