@@ -73,7 +73,7 @@ protocol TextSelectionHandling {
     func replaceSelection(
         in context: RewriteContext,
         with refinedText: String
-    ) -> Result<Void, TextSelectionError>
+    ) async -> Result<Void, TextSelectionError>
 }
 
 @MainActor

@@ -3,45 +3,66 @@ import Foundation
 import Testing
 @testable import Refiner
 
-@Test
+@Test(arguments: ["\n", "\r\n", "\n\n", "\u{2028}", "\u{2029}", ""])
 @MainActor
-func accessibilityTextServiceReplacesOnlySelectedRange() {
-    let targetElement = AXUIElementCreateApplication(ProcessInfo.processInfo.processIdentifier)
+func accessibilityTextServicePastesCompleteResultWithoutInspectingTarget(suffix: String) async throws {
     let handler = MockAccessibilityElementHandler(
-        focusedElement: targetElement,
-        fullText: "Hello world again",
-        selectedRange: CFRange(location: 6, length: 5),
+        focusedElement: AXUIElementCreateApplication(ProcessInfo.processInfo.processIdentifier),
+        fullText: "He go." + suffix,
+        selectedRange: CFRange(location: 0, length: ("He go." + suffix).utf16.count),
         roleDescription: "text area"
     )
-    let insertionHandler = MockTextInsertionHandler()
+    let insertion = MockTextInsertionHandler()
     let service = AccessibilityTextService(
-        accessibilityHandler: handler,
-        textInsertionHandler: insertionHandler,
+        accessibilityHandler: handler, textInsertionHandler: insertion,
         hasAccessibilityPermission: { true }
     )
+    let context = try service.readSelection().get()
+    // The original field may disappear or lose focus while the model is running.
+    handler.allowReading = false
+    let readsBeforePaste = handler.readCount
+    try await service.replaceSelection(in: context, with: "He went." + suffix).get()
+    #expect(insertion.insertedTexts == ["He went." + suffix])
+    #expect(handler.readCount == readsBeforePaste)
+}
 
-    let readResult = service.readSelection()
-    let context: RewriteContext
-    switch readResult {
-    case .success(let value):
-        context = value
-    case .failure(let error):
-        Issue.record("Expected readSelection to succeed, got \(error)")
+@Test(arguments: [CFRange(location: 6, length: 5), CFRange(location: 16, length: 0)])
+@MainActor
+func accessibilityTextServiceHonorsChangedSelectionOrCursor(range: CFRange) async throws {
+    let handler = MockAccessibilityElementHandler(
+        focusedElement: AXUIElementCreateApplication(ProcessInfo.processInfo.processIdentifier),
+        fullText: "He go. Next text.",
+        selectedRange: CFRange(location: 0, length: 6),
+        roleDescription: "text area"
+    )
+    let insertion = MockTextInsertionHandler()
+    insertion.onInsert = { handler.replaceSelectedText($0) }
+    let service = AccessibilityTextService(
+        accessibilityHandler: handler, textInsertionHandler: insertion,
+        hasAccessibilityPermission: { true }
+    )
+    let context = try service.readSelection().get()
+    handler.changeSelection(to: range)
+    try await service.replaceSelection(in: context, with: "He went.").get()
+    let expected = ("He go. Next text." as NSString).replacingCharacters(
+        in: NSRange(location: range.location, length: range.length), with: "He went."
+    )
+    #expect(handler.fullText == expected)
+}
+
+@Test
+@MainActor
+func accessibilityTextServiceReportsPasteDispatchFailure() async {
+    let insertion = MockTextInsertionHandler()
+    insertion.succeeds = false
+    let service = AccessibilityTextService(textInsertionHandler: insertion)
+    let context = RewriteContext(selectedText: "He go.", bundleIdentifier: nil, elementDescription: nil)
+    let result = await service.replaceSelection(in: context, with: "He went.")
+    guard case .failure(let error) = result else {
+        Issue.record("Expected paste dispatch failure")
         return
     }
-
-    let replaceResult = service.replaceSelection(in: context, with: "friend")
-
-    switch replaceResult {
-    case .success:
-        break
-    case .failure(let error):
-        Issue.record("Expected replaceSelection to succeed, got \(error)")
-    }
-
-    #expect(context.selectedText == "world")
-    #expect(insertionHandler.insertedTexts == ["friend"])
-    #expect(handler.setAttributeNames == [kAXSelectedTextRangeAttribute as String])
+    #expect(error == .writeFailed)
 }
 
 @Test
@@ -130,7 +151,9 @@ private final class MockAccessibilityElementHandler: AccessibilityElementHandlin
     private let valueIsSettable: Bool
     private let selectedRangeIsSettable: Bool
     private var attributes: [String: CFTypeRef] = [:]
-    private(set) var setAttributeNames: [String] = []
+    var allowReading = true
+    private(set) var readCount = 0
+    var fullText: String { attributes[kAXValueAttribute as String] as! String }
 
     init(
         focusedElement: AXUIElement,
@@ -158,6 +181,8 @@ private final class MockAccessibilityElementHandler: AccessibilityElementHandlin
         element: AXUIElement,
         attribute: CFString
     ) -> (AXError, CFTypeRef?) {
+        readCount += 1
+        guard allowReading else { return (.invalidUIElement, nil) }
         let name = attribute as String
 
         if name == kAXFocusedUIElementAttribute as String {
@@ -167,14 +192,9 @@ private final class MockAccessibilityElementHandler: AccessibilityElementHandlin
         return (.success, attributes[name])
     }
 
-    func setAttributeValue(
-        element: AXUIElement,
-        attribute: CFString,
-        value: CFTypeRef
-    ) -> AXError {
-        attributes[attribute as String] = value
-        setAttributeNames.append(attribute as String)
-        return .success
+    func changeSelection(to range: CFRange) {
+        var mutableRange = range
+        attributes[kAXSelectedTextRangeAttribute as String] = AXValueCreate(.cfRange, &mutableRange)
     }
 
     func isAttributeSettable(
@@ -186,13 +206,26 @@ private final class MockAccessibilityElementHandler: AccessibilityElementHandlin
             : valueIsSettable
         return (.success, DarwinBoolean(isSettable))
     }
+
+    func replaceSelectedText(_ text: String) {
+        let value = attributes[kAXSelectedTextRangeAttribute as String] as! AXValue
+        var range = CFRange()
+        AXValueGetValue(value, .cfRange, &range)
+        let fullText = attributes[kAXValueAttribute as String] as! NSString
+        attributes[kAXValueAttribute as String] = fullText.replacingCharacters(
+            in: NSRange(location: range.location, length: range.length), with: text
+        ) as CFTypeRef
+    }
 }
 
 private final class MockTextInsertionHandler: TextInsertionHandling, @unchecked Sendable {
     private(set) var insertedTexts: [String] = []
+    var onInsert: ((String) -> Void)?
+    var succeeds = true
 
     func insertText(_ text: String) -> Bool {
         insertedTexts.append(text)
-        return true
+        if succeeds { onInsert?(text) }
+        return succeeds
     }
 }

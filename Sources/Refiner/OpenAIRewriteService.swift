@@ -26,7 +26,6 @@ struct OpenAIRewriteService: Rewriting {
         let requestBody = OpenAIResponsesRequest(
             model: settingsStore.openAIModel,
             input: prompt,
-            temperature: 0.2,
             maxOutputTokens: 512
         )
 
@@ -47,8 +46,10 @@ struct OpenAIRewriteService: Rewriting {
             }
 
             let decodedResponse = try JSONDecoder().decode(OpenAIResponsesResponse.self, from: data)
-            let text = decodedResponse.outputText.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else {
+            guard let text = RewriteTextFormatter.format(
+                generatedText: decodedResponse.outputText,
+                originalText: context.selectedText
+            ) else {
                 return .failure(.emptyResponse)
             }
 
@@ -69,32 +70,79 @@ struct OpenAIRewriteService: Rewriting {
     }
 }
 
-private struct OpenAIResponsesRequest: Encodable {
+struct RewriteTextFormatter {
+    static func format(generatedText: String, originalText: String) -> String? {
+        let content = generatedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !content.isEmpty else {
+            return nil
+        }
+
+        return content + trailingLineBreaks(in: originalText)
+    }
+
+    private static func trailingLineBreaks(in text: String) -> String {
+        let scalars = text.unicodeScalars
+        var suffixStart = scalars.endIndex
+
+        while suffixStart > scalars.startIndex {
+            let previousIndex = scalars.index(before: suffixStart)
+            let scalarValue = scalars[previousIndex].value
+            guard [10, 13, 133, 8_232, 8_233].contains(scalarValue) else {
+                break
+            }
+            suffixStart = previousIndex
+        }
+
+        return String(scalars[suffixStart...])
+    }
+}
+
+struct OpenAIResponsesRequest: Encodable {
     let model: String
     let input: String
-    let temperature: Double
+    let temperature: Double?
+    let reasoning: Reasoning?
     let maxOutputTokens: Int
+
+    init(model: String, input: String, maxOutputTokens: Int) {
+        self.model = model
+        self.input = input
+        self.maxOutputTokens = maxOutputTokens
+
+        if model.lowercased().hasPrefix("gpt-5.6") {
+            temperature = nil
+            reasoning = Reasoning(effort: "low")
+        } else {
+            temperature = 0.2
+            reasoning = nil
+        }
+    }
+
+    struct Reasoning: Encodable {
+        let effort: String
+    }
 
     enum CodingKeys: String, CodingKey {
         case model
         case input
         case temperature
+        case reasoning
         case maxOutputTokens = "max_output_tokens"
     }
 }
 
-private struct OpenAIResponsesResponse: Decodable {
+struct OpenAIResponsesResponse: Decodable {
     let output: [OutputItem]
 
     var outputText: String {
         output
-            .flatMap(\.content)
+            .flatMap { $0.content ?? [] }
             .compactMap(\.text)
             .joined(separator: "\n")
     }
 
     struct OutputItem: Decodable {
-        let content: [ContentItem]
+        let content: [ContentItem]?
     }
 
     struct ContentItem: Decodable {

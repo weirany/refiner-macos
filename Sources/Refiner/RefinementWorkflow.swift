@@ -31,7 +31,7 @@ struct RefinementWorkflow {
             return
         }
 
-        switch textService.replaceSelection(in: context, with: rewriteResult.rewrittenText) {
+        switch await textService.replaceSelection(in: context, with: rewriteResult.rewrittenText) {
         case .success:
             notifier.showSuccess("Successfully Refined")
         case .failure(let error):

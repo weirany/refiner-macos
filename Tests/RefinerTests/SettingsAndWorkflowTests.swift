@@ -110,9 +110,132 @@ func settingsStoreDefaultsOpenAIModel() {
         defaults.removePersistentDomain(forName: suiteName)
     }
 
-    let store = SettingsStore(userDefaults: defaults)
+    let store = SettingsStore(
+        userDefaults: defaults,
+        openAIAPIKeyStore: MockOpenAIAPIKeyStore()
+    )
 
-    #expect(store.openAIModel == "gpt-5.4-nano")
+    #expect(store.openAIModel == "gpt-5.6-luna")
+}
+
+@Test
+func settingsStoreMigratesLegacyDefaultOpenAIModel() {
+    let suiteName = "RefinerTests.OpenAIModelMigration.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suiteName)!
+    defaults.set("gpt-5.4-nano", forKey: "openAIModel")
+    defer {
+        defaults.removePersistentDomain(forName: suiteName)
+    }
+
+    let store = SettingsStore(
+        userDefaults: defaults,
+        openAIAPIKeyStore: MockOpenAIAPIKeyStore()
+    )
+
+    #expect(store.openAIModel == "gpt-5.6-luna")
+    #expect(defaults.string(forKey: "openAIModel") == "gpt-5.6-luna")
+}
+
+@Test
+func gpt56RequestUsesReasoningInsteadOfTemperature() throws {
+    let request = OpenAIResponsesRequest(
+        model: "gpt-5.6-luna",
+        input: "Rewrite this",
+        maxOutputTokens: 512
+    )
+
+    let data = try JSONEncoder().encode(request)
+    let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let reasoning = try #require(json["reasoning"] as? [String: Any])
+
+    #expect(json["model"] as? String == "gpt-5.6-luna")
+    #expect(json["temperature"] == nil)
+    #expect(reasoning["effort"] as? String == "low")
+    #expect(json["max_output_tokens"] as? Int == 512)
+}
+
+@Test
+func legacyRequestKeepsTemperature() throws {
+    let request = OpenAIResponsesRequest(
+        model: "gpt-5.4-nano",
+        input: "Rewrite this",
+        maxOutputTokens: 512
+    )
+
+    let data = try JSONEncoder().encode(request)
+    let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+    #expect(json["temperature"] as? Double == 0.2)
+    #expect(json["reasoning"] == nil)
+}
+
+@Test
+func responsesDecoderIgnoresReasoningOutputItems() throws {
+    let data = Data(
+        """
+        {
+          "output": [
+            {"type": "reasoning", "summary": []},
+            {
+              "type": "message",
+              "content": [
+                {"type": "output_text", "text": "Refined text"}
+              ]
+            }
+          ]
+        }
+        """.utf8
+    )
+
+    let response = try JSONDecoder().decode(OpenAIResponsesResponse.self, from: data)
+
+    #expect(response.outputText == "Refined text")
+}
+
+@Test
+func rewriteTextPreservesOriginalTrailingLineBreaks() {
+    #expect(
+        RewriteTextFormatter.format(
+            generatedText: "Refined text\n\n",
+            originalText: "Original text\n"
+        ) == "Refined text\n"
+    )
+    #expect(
+        RewriteTextFormatter.format(
+            generatedText: "Refined text\n",
+            originalText: "Original text\n\n"
+        ) == "Refined text\n\n"
+    )
+    #expect(
+        RewriteTextFormatter.format(
+            generatedText: "Refined text\n",
+            originalText: "Original text\r\n"
+        ) == "Refined text\r\n"
+    )
+    #expect(
+        RewriteTextFormatter.format(
+            generatedText: "Refined text\n",
+            originalText: "Original text\u{2028}"
+        ) == "Refined text\u{2028}"
+    )
+    #expect(
+        RewriteTextFormatter.format(
+            generatedText: "Refined text\n",
+            originalText: "Original text\u{2029}"
+        ) == "Refined text\u{2029}"
+    )
+    #expect(
+        RewriteTextFormatter.format(
+            generatedText: "Refined text\n",
+            originalText: "Original text"
+        ) == "Refined text"
+    )
+    #expect(
+        RewriteTextFormatter.format(
+            generatedText: " \n",
+            originalText: "Original text\n"
+        ) == nil
+    )
 }
 
 @Test

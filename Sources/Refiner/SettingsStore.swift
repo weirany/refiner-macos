@@ -9,7 +9,8 @@ final class SettingsStore: ObservableObject {
         static let keyboardShortcut = "keyboardShortcut"
     }
 
-    static let defaultOpenAIModel = "gpt-5.4-nano"
+    static let defaultOpenAIModel = "gpt-5.6-luna"
+    private static let legacyDefaultOpenAIModel = "gpt-5.4-nano"
 
     private let userDefaults: UserDefaults
     private let openAIAPIKeyStore: OpenAIAPIKeyStoring
@@ -42,7 +43,10 @@ final class SettingsStore: ObservableObject {
         openAIAPIKey = openAIAPIKeyStore.loadAPIKey()
         let storedModel = userDefaults.string(forKey: Keys.openAIModel)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        if let storedModel, !storedModel.isEmpty {
+        if storedModel == Self.legacyDefaultOpenAIModel {
+            openAIModel = Self.defaultOpenAIModel
+            userDefaults.set(Self.defaultOpenAIModel, forKey: Keys.openAIModel)
+        } else if let storedModel, !storedModel.isEmpty {
             openAIModel = storedModel
         } else {
             openAIModel = Self.defaultOpenAIModel

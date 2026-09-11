@@ -1,17 +1,13 @@
 import AppKit
 import ApplicationServices
 import Foundation
+import OSLog
 
 protocol AccessibilityElementHandling: Sendable {
     func copyAttributeValue(
         element: AXUIElement,
         attribute: CFString
     ) -> (AXError, CFTypeRef?)
-    func setAttributeValue(
-        element: AXUIElement,
-        attribute: CFString,
-        value: CFTypeRef
-    ) -> AXError
     func isAttributeSettable(
         element: AXUIElement,
         attribute: CFString
@@ -28,14 +24,6 @@ private struct LiveAccessibilityElementHandler: AccessibilityElementHandling {
         return (result, value)
     }
 
-    func setAttributeValue(
-        element: AXUIElement,
-        attribute: CFString,
-        value: CFTypeRef
-    ) -> AXError {
-        AXUIElementSetAttributeValue(element, attribute, value)
-    }
-
     func isAttributeSettable(
         element: AXUIElement,
         attribute: CFString
@@ -47,42 +35,87 @@ private struct LiveAccessibilityElementHandler: AccessibilityElementHandling {
 }
 
 protocol TextInsertionHandling: Sendable {
-    func insertText(_ text: String) -> Bool
+    @MainActor func insertText(_ text: String) async -> Bool
 }
 
 private struct LiveTextInsertionHandler: TextInsertionHandling {
-    func insertText(_ text: String) -> Bool {
+    @MainActor func insertText(_ text: String) async -> Bool {
         guard !text.isEmpty else {
             return true
         }
 
+        let pasteboard = NSPasteboard.general
+        let previousItems = PasteboardSnapshot.capture(from: pasteboard)
+        pasteboard.clearContents()
+        guard pasteboard.setString(text, forType: .string) else {
+            previousItems.restore(to: pasteboard)
+            return false
+        }
+        let insertedTextChangeCount = pasteboard.changeCount
+
+        guard postPasteShortcut() else {
+            previousItems.restore(to: pasteboard)
+            return false
+        }
+
+        // Let the main run loop serve clipboard requests while the editor pastes.
+        try? await Task.sleep(for: .milliseconds(500))
+        if pasteboard.changeCount == insertedTextChangeCount {
+            previousItems.restore(to: pasteboard)
+        }
+        return true
+    }
+
+    private func postPasteShortcut() -> Bool {
+        let pasteKeyCode: CGKeyCode = 9
         guard
             let source = CGEventSource(stateID: .hidSystemState),
-            let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
-            let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false)
+            let keyDown = CGEvent(keyboardEventSource: source, virtualKey: pasteKeyCode, keyDown: true),
+            let keyUp = CGEvent(keyboardEventSource: source, virtualKey: pasteKeyCode, keyDown: false)
         else {
             return false
         }
 
-        let unicodeScalars = Array(text.utf16)
-        keyDown.keyboardSetUnicodeString(stringLength: unicodeScalars.count, unicodeString: unicodeScalars)
-        keyUp.keyboardSetUnicodeString(stringLength: unicodeScalars.count, unicodeString: unicodeScalars)
+        keyDown.flags = .maskCommand
+        keyUp.flags = .maskCommand
         keyDown.post(tap: .cghidEventTap)
         keyUp.post(tap: .cghidEventTap)
         return true
     }
 }
 
-final class AccessibilityTextService: TextSelectionHandling, @unchecked Sendable {
-    private struct SelectionSnapshot {
-        let element: AXUIElement
-        let selectedRange: CFRange
+private struct PasteboardSnapshot {
+    private let items: [[NSPasteboard.PasteboardType: Data]]
+
+    static func capture(from pasteboard: NSPasteboard) -> PasteboardSnapshot {
+        let items = pasteboard.pasteboardItems?.map { item in
+            Dictionary(uniqueKeysWithValues: item.types.compactMap { type in
+                item.data(forType: type).map { (type, $0) }
+            })
+        } ?? []
+        return PasteboardSnapshot(items: items)
     }
 
+    func restore(to pasteboard: NSPasteboard) {
+        pasteboard.clearContents()
+        let restoredItems = items.map { values in
+            let item = NSPasteboardItem()
+            for (type, data) in values {
+                item.setData(data, forType: type)
+            }
+            return item
+        }
+        if !restoredItems.isEmpty {
+            pasteboard.writeObjects(restoredItems)
+        }
+    }
+}
+
+final class AccessibilityTextService: TextSelectionHandling, @unchecked Sendable {
+    private let logger = Logger(subsystem: "com.weiranye.refiner", category: "WriteBack")
     private let accessibilityHandler: AccessibilityElementHandling
     private let textInsertionHandler: TextInsertionHandling
     private let hasAccessibilityPermission: @Sendable () -> Bool
-    private var lastSnapshot: SelectionSnapshot?
 
     init(
         accessibilityHandler: AccessibilityElementHandling = LiveAccessibilityElementHandler(),
@@ -119,13 +152,13 @@ final class AccessibilityTextService: TextSelectionHandling, @unchecked Sendable
         }
 
         let nsText = fullText as NSString
+        guard selectedRange.location >= 0,
+              selectedRange.length <= nsText.length,
+              selectedRange.location <= nsText.length - selectedRange.length else {
+            return .failure(.readFailed)
+        }
         let selectedText = nsText.substring(with: NSRange(location: selectedRange.location, length: selectedRange.length))
         let role = stringAttribute(kAXRoleDescriptionAttribute, on: element)
-
-        lastSnapshot = SelectionSnapshot(
-            element: element,
-            selectedRange: selectedRange
-        )
 
         return .success(
             RewriteContext(
@@ -139,32 +172,15 @@ final class AccessibilityTextService: TextSelectionHandling, @unchecked Sendable
     func replaceSelection(
         in context: RewriteContext,
         with refinedText: String
-    ) -> Result<Void, TextSelectionError> {
-        guard let snapshot = lastSnapshot else {
+    ) async -> Result<Void, TextSelectionError> {
+        logger.notice("Starting writeback; generated text differs: \(refinedText != context.selectedText)")
+        // Honor the user's current focus, selection, and cursor position.
+        // Do not restore the original selection or inspect the editor after pasting.
+        guard await textInsertionHandler.insertText(refinedText) else {
+            logger.error("Paste dispatch failed")
             return .failure(.writeFailed)
         }
-
-        var selectedRange = snapshot.selectedRange
-        guard
-            let rangeValue = AXValueCreate(.cfRange, &selectedRange)
-        else {
-            return .failure(.writeFailed)
-        }
-
-        let setRangeResult = accessibilityHandler.setAttributeValue(
-            element: snapshot.element,
-            attribute: kAXSelectedTextRangeAttribute as CFString,
-            value: rangeValue
-        )
-        guard setRangeResult == .success else {
-            return .failure(.writeFailed)
-        }
-
-        guard textInsertionHandler.insertText(refinedText) else {
-            return .failure(.writeFailed)
-        }
-
-        lastSnapshot = nil
+        logger.notice("Paste dispatched")
         return .success(())
     }
 
